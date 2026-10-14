@@ -7,6 +7,10 @@ on:
   push:
     branches: [litellm-dictation]
 
+concurrency:
+  group: poc-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -44,3 +48,17 @@ jobs:
           name: MuesliDev
           path: MuesliDev.zip
           retention-days: 7
+
+  test:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Every suite is assigned to a shard
+        run: ./scripts/test_ci_test_shards.sh
+      - name: Dictation and transcription shard
+        run: bash ./scripts/run_ci_test_shard.sh dictation-transcription
