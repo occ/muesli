@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import MuesliNativeApp
@@ -97,6 +98,22 @@ struct CustomLLMTranscriptionClientTests {
         }
     }
 
+    @Test("silent recordings return no text without contacting the model")
+    func silenceSkipsRequest() async throws {
+        let calls = CustomLLMCallCounter()
+        let text = try await transcribeTone(amplitude: 0.0005, calls: calls)
+        #expect(text == "")
+        #expect(await calls.count == 0)
+    }
+
+    @Test("quiet speech-level audio is still sent to the model")
+    func quietAudioIsSent() async throws {
+        let calls = CustomLLMCallCounter()
+        let text = try await transcribeTone(amplitude: 0.02, calls: calls)
+        #expect(text == "Merhaba")
+        #expect(await calls.count == 1)
+    }
+
     private func configuration(language: String = "") -> CustomLLMDictationConfiguration {
         CustomLLMDictationConfiguration(
             requestURL: URL(string: "https://litellm.example/v1/chat/completions")!,
@@ -117,5 +134,43 @@ struct CustomLLMTranscriptionClientTests {
             return (Data(body.utf8), response)
         }
         return try await client.transcribe(wavURL: wavURL, configuration: configuration())
+    }
+
+    /// Writes one second of a 220 Hz PCM16 tone at `amplitude` and transcribes it.
+    private func transcribeTone(amplitude: Float, calls: CustomLLMCallCounter) async throws -> String {
+        let wavURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("muesli-custom-llm-tone-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: wavURL) }
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000))
+        buffer.frameLength = 16_000
+        let samples = try #require(buffer.floatChannelData?[0])
+        for index in 0..<16_000 {
+            samples[index] = amplitude * sin(2 * .pi * 220 * Float(index) / 16_000)
+        }
+        do {
+            let file = try AVAudioFile(forWriting: wavURL, settings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 16_000,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+            ])
+            try file.write(from: buffer)
+        }
+        let client = CustomLLMTranscriptionClient { request in
+            await calls.increment()
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (Data(#"{"choices":[{"message":{"content":"Merhaba"}}]}"#.utf8), response)
+        }
+        return try await client.transcribe(wavURL: wavURL, configuration: configuration())
+    }
+}
+
+private actor CustomLLMCallCounter {
+    private(set) var count = 0
+
+    func increment() {
+        count += 1
     }
 }

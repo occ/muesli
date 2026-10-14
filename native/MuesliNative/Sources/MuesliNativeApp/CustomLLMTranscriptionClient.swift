@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import MuesliCore
 
@@ -43,6 +44,9 @@ struct CustomLLMTranscriptionClient: Sendable {
 
     static let requestTimeout: TimeInterval = 65
     static let maxOutputTokens = 4096
+    /// RMS below this (about -50 dBFS) counts as no speech. Chat models invent
+    /// plausible sentences for silent clips, so those are never sent.
+    static let silenceRMSThreshold: Float = 0.003
 
     private let loadData: LoadData
 
@@ -95,15 +99,19 @@ struct CustomLLMTranscriptionClient: Sendable {
     func transcribe(wavURL: URL, configuration: CustomLLMDictationConfiguration) async throws -> String {
         try Task.checkCancellation()
         let audioData: Data
+        let isSilent: Bool
         do {
-            audioData = try await Task.detached(priority: .userInitiated) {
-                try Data(contentsOf: wavURL)
+            (audioData, isSilent) = try await Task.detached(priority: .userInitiated) {
+                // Audio that AVFoundation cannot decode is left for the server to judge.
+                (try Data(contentsOf: wavURL), (try? Self.monoSamples(wavURL: wavURL)).map(Self.isSilent) ?? false)
             }.value
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             throw CustomLLMTranscriptionError.network(underlying: error)
         }
+        // An empty transcript ends dictation without pasting or falling back.
+        if isSilent { return "" }
 
         try Task.checkCancellation()
         let request = try Self.request(audioData: audioData, configuration: configuration)
@@ -133,6 +141,22 @@ struct CustomLLMTranscriptionClient: Sendable {
         } catch {
             throw CustomLLMTranscriptionError.network(underlying: error)
         }
+    }
+
+    static func isSilent(_ samples: [Float]) -> Bool {
+        guard !samples.isEmpty else { return true }
+        let meanSquare = samples.reduce(Float(0)) { $0 + $1 * $1 } / Float(samples.count)
+        return meanSquare.squareRoot() < silenceRMSThreshold
+    }
+
+    private static func monoSamples(wavURL: URL) throws -> [Float] {
+        let file = try AVAudioFile(forReading: wavURL)
+        guard file.length > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                            frameCapacity: AVAudioFrameCount(file.length)) else { return [] }
+        try file.read(into: buffer)
+        guard let channel = buffer.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
 
     static func request(audioData: Data, configuration: CustomLLMDictationConfiguration) throws -> URLRequest {
