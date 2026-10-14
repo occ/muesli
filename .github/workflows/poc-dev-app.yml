@@ -1,0 +1,47 @@
+# Fork-only POC: build an ad-hoc signed MuesliDev.app (separate bundle ID and
+# data directory) on a runner with Xcode, since local CLT lacks coremlc.
+name: POC dev app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [litellm-dictation]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build MuesliDev.app (debug, ad-hoc signed)
+        env:
+          MUESLI_APP_NAME: MuesliDev
+          MUESLI_BUNDLE_ID: com.muesli.dev
+          MUESLI_SUPPORT_DIR_NAME: MuesliDev
+          MUESLI_DISPLAY_NAME: MuesliDev
+          MUESLI_SPARKLE_FEED_URL: ""
+          MUESLI_TELEMETRY_CHANNEL: dev
+          MUESLI_SKIP_SIGN: "1"
+          MUESLI_ALLOW_MISSING_LOCALVQE: "1"
+          MUESLI_PROVISIONING_PROFILE: ""
+          MUESLI_APS_ENVIRONMENT: ""
+          MUESLI_ENTITLEMENTS: ${{ github.workspace }}/scripts/MuesliLocalOnly.entitlements
+          MUESLI_INSTALL_DIR: ${{ runner.temp }}/apps
+        run: ./scripts/build_native_app.sh debug
+
+      - name: Package
+        run: ditto -c -k --keepParent "$RUNNER_TEMP/apps/MuesliDev.app" MuesliDev.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MuesliDev
+          path: MuesliDev.zip
+          retention-days: 7
