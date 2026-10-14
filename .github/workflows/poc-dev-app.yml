@@ -28,7 +28,6 @@ jobs:
           MUESLI_SUPPORT_DIR_NAME: MuesliDev
           MUESLI_DISPLAY_NAME: MuesliDev
           MUESLI_SPARKLE_FEED_URL: ""
-          MUESLI_TELEMETRY_CHANNEL: dev
           MUESLI_SKIP_SIGN: "1"
           MUESLI_ALLOW_MISSING_LOCALVQE: "1"
           MUESLI_PROVISIONING_PROFILE: ""
