@@ -10638,14 +10638,16 @@ public final class MuesliController: NSObject {
             provider: selectedDictationProvider,
             openAIAPIKey: resolvedOpenAIAPIKey(),
             openRouterAPIKey: openRouterAuth.resolvedAPIKey(legacyAPIKey: config.openRouterAPIKey),
-            openRouterModel: config.openRouterDictationModel
+            openRouterModel: config.openRouterDictationModel,
+            config: config
         ) {
-            return blockHostedDictationStart(
-                status: message,
-                warning: selectedDictationProvider == .openRouter
-                    ? "OpenRouter not ready"
-                    : "OpenAI not configured"
-            )
+            let warning: String
+            switch selectedDictationProvider {
+            case .openRouter: warning = "OpenRouter not ready"
+            case .customLLM: warning = "Custom LLM not configured"
+            default: warning = "OpenAI not configured"
+            }
+            return blockHostedDictationStart(status: message, warning: warning)
         }
         guard !dictationBackendReadiness.allowsDictation else { return true }
         guard let message = dictationBackendReadiness.blockingMessage(
@@ -11154,6 +11156,8 @@ public final class MuesliController: NSObject {
                 apiKey: openRouterAuth.resolvedAPIKey(legacyAPIKey: config.openRouterAPIKey),
                 model: config.openRouterDictationModel
             ))
+        case .customLLM:
+            session = CustomLLMHostedDictationSession(config: config)
         }
         hostedDictationSession = session
         if session.acceptsLiveAudio {

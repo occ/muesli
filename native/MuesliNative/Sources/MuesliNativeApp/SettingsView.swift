@@ -976,7 +976,11 @@ struct SettingsView: View {
             }
             .id(FeatureTourTarget.dictationProviderSetting.rawValue)
             .featureTourTarget(.dictationProviderSetting)
-            Divider().background(MuesliTheme.surfaceBorder)
+            if appState.dictationProvider == .customLLM {
+                customLLMDictationSettingsRows
+            } else {
+                Divider().background(MuesliTheme.surfaceBorder)
+            }
             if appState.dictationProvider == .openAI {
                 openAIDictationSettingsRows
                 Divider().background(MuesliTheme.surfaceBorder)
@@ -1047,6 +1051,27 @@ struct SettingsView: View {
                 openAITestControl
             }
         }
+    }
+
+    /// The shared Custom LLM connection rows (they open with their own divider)
+    /// plus the dictation-only model and language.
+    @ViewBuilder
+    private var customLLMDictationSettingsRows: some View {
+        customLLMSettingsRows(model: appState.config.customLLMDictationModel) { value in
+            controller.updateConfig { $0.customLLMDictationModel = value }
+        }
+        Divider().background(MuesliTheme.surfaceBorder)
+        settingsRow("Language", controlWidth: meetingControlWidth) {
+            PastableTextField(
+                text: appState.config.customLLMDictationLanguage,
+                placeholder: "Auto-detect, or e.g. Turkish",
+                commitsOnEndEditing: true,
+                onChange: { val in controller.updateConfig { $0.customLLMDictationLanguage = val } }
+            )
+            .frame(height: 22)
+        }
+        settingsDescription("Connection is shared with Custom LLM summaries and cleanup. The model must accept audio input, such as a LiteLLM alias for Gemini.")
+        Divider().background(MuesliTheme.surfaceBorder)
     }
 
     private var openAIDictationModelPresets: [SummaryModelPreset] {

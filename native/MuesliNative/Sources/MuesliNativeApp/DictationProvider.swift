@@ -8,6 +8,7 @@ enum DictationProvider: String, CaseIterable, Codable, Sendable {
     case local
     case openAI
     case openRouter
+    case customLLM = "custom_llm"
 
     static let defaultProvider: Self = .local
 
@@ -19,6 +20,8 @@ enum DictationProvider: String, CaseIterable, Codable, Sendable {
             return "OpenAI"
         case .openRouter:
             return "OpenRouter"
+        case .customLLM:
+            return "Custom LLM"
         }
     }
 

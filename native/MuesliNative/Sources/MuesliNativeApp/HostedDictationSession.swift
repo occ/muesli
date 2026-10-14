@@ -79,6 +79,49 @@ final class OpenRouterHostedDictationSession: HostedDictationSession, @unchecked
     }
 }
 
+/// Batch session: the recorder's WAV goes to the Custom LLM endpoint after
+/// recording stops. The API key command runs here, off the hotkey path.
+final class CustomLLMHostedDictationSession: HostedDictationSession, @unchecked Sendable {
+    private let config: AppConfig
+    private let client: CustomLLMTranscriptionClient
+    private let lock = NSLock()
+    private var task: Task<HostedDictationResult, Error>?
+    private var cancelled = false
+
+    let acceptsLiveAudio = false
+
+    init(config: AppConfig, client: CustomLLMTranscriptionClient = CustomLLMTranscriptionClient()) {
+        self.config = config
+        self.client = client
+    }
+
+    func append(_: [Float]) {}
+
+    func finish(recordedWAVURL: URL) async throws -> HostedDictationResult {
+        let config = self.config
+        let client = self.client
+        let task = Task {
+            let configuration = try await CustomLLMTranscriptionClient.configuration(from: config)
+            let text = try await client.transcribe(wavURL: recordedWAVURL, configuration: configuration)
+            return HostedDictationResult(text: text, backend: "custom-llm-stt", model: configuration.model,
+                endpoint: configuration.requestURL.absoluteString)
+        }
+        lock.withLock {
+            self.task = task
+            if cancelled { task.cancel() }
+        }
+        defer { lock.withLock { self.task = nil } }
+        return try await task.value
+    }
+
+    func cancel() {
+        lock.withLock {
+            cancelled = true
+            task?.cancel()
+        }
+    }
+}
+
 enum HostedDictationFallbackPolicy {
     static func shouldFallback(
         after error: Error,
@@ -97,7 +140,8 @@ enum HostedDictationActivationPolicy {
         provider: DictationProvider,
         openAIAPIKey: String,
         openRouterAPIKey: String,
-        openRouterModel: String
+        openRouterModel: String,
+        config: AppConfig
     ) -> String? {
         switch provider {
         case .local:
@@ -113,6 +157,8 @@ enum HostedDictationActivationPolicy {
             return OpenRouterTranscriptionClient.normalizedModel(openRouterModel).isEmpty
                 ? "Choose an OpenRouter transcription model in Settings → Dictation."
                 : nil
+        case .customLLM:
+            return CustomLLMTranscriptionClient.configurationIssue(config: config)
         }
     }
 }

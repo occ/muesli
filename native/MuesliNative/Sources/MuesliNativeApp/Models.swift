@@ -1783,6 +1783,9 @@ struct AppConfig: Codable {
     var dictationProvider: String = DictationProvider.defaultProvider.rawValue
     var openaiDictationModel: String = OpenAITranscriptionClient.defaultModel
     var openRouterDictationModel: String = ""
+    var customLLMDictationModel: String = ""
+    /// Spoken language passed to the Custom LLM dictation prompt; empty means auto.
+    var customLLMDictationLanguage: String = ""
     var dictationInputDeviceUID: String? = nil
     var meetingInputDeviceUID: String? = nil
     var cohereLanguage: String = CohereTranscribeLanguage.defaultLanguage.rawValue
@@ -1950,6 +1953,8 @@ struct AppConfig: Codable {
         case dictationProvider = "dictation_provider"
         case openaiDictationModel = "openai_dictation_model"
         case openRouterDictationModel = "openrouter_dictation_model"
+        case customLLMDictationModel = "custom_llm_dictation_model"
+        case customLLMDictationLanguage = "custom_llm_dictation_language"
         case dictationInputDeviceUID = "dictation_input_device_uid"
         case meetingInputDeviceUID = "meeting_input_device_uid"
         case cohereLanguage = "cohere_language"
@@ -2117,6 +2122,10 @@ struct AppConfig: Codable {
         openaiDictationModel = (try? c.decode(String.self, forKey: .openaiDictationModel)) ?? defaults.openaiDictationModel
         openRouterDictationModel = (try? c.decode(String.self, forKey: .openRouterDictationModel))
             ?? defaults.openRouterDictationModel
+        customLLMDictationModel = (try? c.decode(String.self, forKey: .customLLMDictationModel))
+            ?? defaults.customLLMDictationModel
+        customLLMDictationLanguage = (try? c.decode(String.self, forKey: .customLLMDictationLanguage))
+            ?? defaults.customLLMDictationLanguage
         dictationInputDeviceUID = try? c.decode(String.self, forKey: .dictationInputDeviceUID)
         meetingInputDeviceUID = try? c.decode(String.self, forKey: .meetingInputDeviceUID)
         cohereLanguage = CohereTranscribeLanguage.resolvedCode(try? c.decode(String.self, forKey: .cohereLanguage))
