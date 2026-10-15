@@ -102,7 +102,7 @@ case "${shard}" in
       BackendOptionTests
       OpenAIDictationProviderTests
       OpenRouterTranscriptionClientTests
-      CustomLLMTranscriptionClientTests
+      CustomLLMRealtimeDictationTests
       SummaryModelPresetTests
       HotkeyMonitorTests
       PushToTalkEnablementPolicyTests

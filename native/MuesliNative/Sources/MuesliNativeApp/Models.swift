@@ -1784,7 +1784,7 @@ struct AppConfig: Codable {
     var openaiDictationModel: String = OpenAITranscriptionClient.defaultModel
     var openRouterDictationModel: String = ""
     var customLLMDictationModel: String = ""
-    /// Spoken language passed to the Custom LLM dictation prompt; empty means auto.
+    /// ISO-639-1 language hint for Custom LLM realtime dictation; empty means auto.
     var customLLMDictationLanguage: String = ""
     var dictationInputDeviceUID: String? = nil
     var meetingInputDeviceUID: String? = nil

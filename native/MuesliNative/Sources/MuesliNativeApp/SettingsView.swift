@@ -1054,7 +1054,8 @@ struct SettingsView: View {
     }
 
     /// The shared Custom LLM connection rows (they open with their own divider)
-    /// plus the dictation-only model and language.
+    /// plus the dictation-only language. Dictation streams to the host's
+    /// OpenAI Realtime transcription endpoint.
     @ViewBuilder
     private var customLLMDictationSettingsRows: some View {
         customLLMSettingsRows(model: appState.config.customLLMDictationModel) { value in
@@ -1064,13 +1065,13 @@ struct SettingsView: View {
         settingsRow("Language", controlWidth: meetingControlWidth) {
             PastableTextField(
                 text: appState.config.customLLMDictationLanguage,
-                placeholder: "Auto-detect, or e.g. Turkish",
+                placeholder: "Auto-detect, or ISO code such as tr",
                 commitsOnEndEditing: true,
                 onChange: { val in controller.updateConfig { $0.customLLMDictationLanguage = val } }
             )
             .frame(height: 22)
         }
-        settingsDescription("Connection is shared with Custom LLM summaries and cleanup. The model must accept audio input, such as a LiteLLM alias for Gemini.")
+        settingsDescription("Streams to /v1/realtime on the Custom LLM host. Connection is shared with summaries and cleanup. Empty model uses \(CustomLLMRealtimeDictation.defaultModel).")
         Divider().background(MuesliTheme.surfaceBorder)
     }
 

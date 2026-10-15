@@ -1,8 +1,13 @@
 import Foundation
 
 struct OpenAIDictationConfiguration: Sendable {
-    let apiKey: String
-    let model: String
+    var apiKey: String
+    var model: String
+    /// Realtime transcription socket; a proxy such as LiteLLM can stand in for OpenAI.
+    var endpoint: URL = OpenAIRealtimeProtocol.endpoint
+    var extraHeaders: [String: String] = [:]
+    /// ISO-639-1 spoken-language hint; empty lets the model detect it.
+    var language: String = ""
 }
 
 enum OpenAITranscriptionError: LocalizedError, @unchecked Sendable {
@@ -34,17 +39,28 @@ enum OpenAITranscriptionError: LocalizedError, @unchecked Sendable {
 enum OpenAIRealtimeProtocol {
     static let endpoint = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!
 
-    static func request(apiKey: String) throws -> URLRequest {
+    static func request(
+        apiKey: String,
+        endpoint: URL = endpoint,
+        extraHeaders: [String: String] = [:]
+    ) throws -> URLRequest {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw OpenAITranscriptionError.missingAPIKey }
         var request = URLRequest(url: endpoint)
         request.timeoutInterval = 30
+        // Custom headers first so they cannot replace the credential.
+        for (name, value) in extraHeaders {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         return request
     }
 
-    static func sessionUpdate(model: String) throws -> String {
+    static func sessionUpdate(model: String, language: String = "") throws -> String {
         let normalized = OpenAITranscriptionClient.normalizeModel(model)
+        var transcription = ["model": normalized]
+        let language = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !language.isEmpty { transcription["language"] = language }
         return try encode([
             "type": "session.update",
             "session": [
@@ -52,7 +68,7 @@ enum OpenAIRealtimeProtocol {
                 "audio": [
                     "input": [
                         "format": ["type": "audio/pcm", "rate": 24_000],
-                        "transcription": ["model": normalized],
+                        "transcription": transcription,
                         "turn_detection": NSNull(),
                     ] as [String: Any],
                 ],
@@ -137,7 +153,10 @@ private struct OpenAIRealtimeServerEvent {
 }
 
 actor OpenAIRealtimeTranscriptionSession {
-    private let configuration: OpenAIDictationConfiguration
+    typealias ResolveConfiguration = @Sendable () async throws -> OpenAIDictationConfiguration
+
+    private let resolveConfiguration: ResolveConfiguration
+    private var configuration: OpenAIDictationConfiguration?
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var readyContinuation: CheckedContinuation<Void, Error>?
@@ -145,17 +164,32 @@ actor OpenAIRealtimeTranscriptionSession {
     private var readyTimeoutTask: Task<Void, Never>?
     private var finalTimeoutTask: Task<Void, Never>?
     private var isReady = false
+    private var isCancelled = false
     private var transcriptByItem: [String: String] = [:]
     private var completedItemIDs: [String] = []
     private var commitRequested = false
     private var terminalError: Error?
 
     init(configuration: OpenAIDictationConfiguration) {
-        self.configuration = configuration
+        self.init { configuration }
+    }
+
+    /// `resolveConfiguration` runs inside `start()`, so a credential command
+    /// overlaps socket setup instead of delaying recording.
+    init(resolveConfiguration: @escaping ResolveConfiguration) {
+        self.resolveConfiguration = resolveConfiguration
     }
 
     func start(timeout: Duration = .seconds(30)) async throws {
-        let request = try OpenAIRealtimeProtocol.request(apiKey: configuration.apiKey)
+        let configuration = try await resolveConfiguration()
+        // cancel() may have run while the credential was resolving.
+        if isCancelled { throw CancellationError() }
+        self.configuration = configuration
+        let request = try OpenAIRealtimeProtocol.request(
+            apiKey: configuration.apiKey,
+            endpoint: configuration.endpoint,
+            extraHeaders: configuration.extraHeaders
+        )
         let socket = URLSession.shared.webSocketTask(with: request)
         self.socket = socket
         try await withCheckedThrowingContinuation { continuation in
@@ -190,6 +224,7 @@ actor OpenAIRealtimeTranscriptionSession {
     }
 
     func cancel() {
+        isCancelled = true
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         receiveTask?.cancel()
@@ -243,8 +278,9 @@ actor OpenAIRealtimeTranscriptionSession {
     private func handle(_ event: OpenAIRealtimeServerEvent) async throws {
         switch event.type {
         case "session.created":
-            guard let socket else { return }
-            try await socket.send(.string(try OpenAIRealtimeProtocol.sessionUpdate(model: configuration.model)))
+            guard let socket, let configuration else { return }
+            try await socket.send(.string(try OpenAIRealtimeProtocol.sessionUpdate(
+                model: configuration.model, language: configuration.language)))
         case "session.updated":
             isReady = true
             readyTimeoutTask?.cancel()
@@ -321,8 +357,12 @@ final class OpenAIRealtimeDictationStream: @unchecked Sendable {
     private let lock = NSLock()
     private var overflowed = false
 
-    init(configuration: OpenAIDictationConfiguration) {
-        let session = OpenAIRealtimeTranscriptionSession(configuration: configuration)
+    convenience init(configuration: OpenAIDictationConfiguration) {
+        self.init { configuration }
+    }
+
+    init(resolveConfiguration: @escaping OpenAIRealtimeTranscriptionSession.ResolveConfiguration) {
+        let session = OpenAIRealtimeTranscriptionSession(resolveConfiguration: resolveConfiguration)
         self.session = session
         let pair = AsyncStream<[Float]>.makeStream(bufferingPolicy: .bufferingNewest(64))
         continuation = pair.continuation

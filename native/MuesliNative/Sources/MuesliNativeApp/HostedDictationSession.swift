@@ -17,12 +17,27 @@ protocol HostedDictationSession: AnyObject {
 final class OpenAIHostedDictationSession: HostedDictationSession {
     private let stream: OpenAIRealtimeDictationStream
     private let model: String
+    private let backend: String
+    private let endpoint: URL
 
     let acceptsLiveAudio = true
 
-    init(configuration: OpenAIDictationConfiguration) {
-        model = configuration.model
-        stream = OpenAIRealtimeDictationStream(configuration: configuration)
+    convenience init(configuration: OpenAIDictationConfiguration) {
+        self.init(model: configuration.model, backend: "openai-realtime", endpoint: configuration.endpoint) {
+            configuration
+        }
+    }
+
+    init(
+        model: String,
+        backend: String,
+        endpoint: URL,
+        resolveConfiguration: @escaping OpenAIRealtimeTranscriptionSession.ResolveConfiguration
+    ) {
+        self.model = model
+        self.backend = backend
+        self.endpoint = endpoint
+        stream = OpenAIRealtimeDictationStream(resolveConfiguration: resolveConfiguration)
     }
 
     func append(_ samples: [Float]) {
@@ -30,8 +45,8 @@ final class OpenAIHostedDictationSession: HostedDictationSession {
     }
 
     func finish(recordedWAVURL _: URL) async throws -> HostedDictationResult {
-        HostedDictationResult(text: try await stream.finish(), backend: "openai-realtime", model: model,
-            endpoint: OpenAIRealtimeProtocol.endpoint.absoluteString)
+        HostedDictationResult(text: try await stream.finish(), backend: backend, model: model,
+            endpoint: endpoint.absoluteString)
     }
 
     func cancel() {
@@ -79,49 +94,6 @@ final class OpenRouterHostedDictationSession: HostedDictationSession, @unchecked
     }
 }
 
-/// Batch session: the recorder's WAV goes to the Custom LLM endpoint after
-/// recording stops. The API key command runs here, off the hotkey path.
-final class CustomLLMHostedDictationSession: HostedDictationSession, @unchecked Sendable {
-    private let config: AppConfig
-    private let client: CustomLLMTranscriptionClient
-    private let lock = NSLock()
-    private var task: Task<HostedDictationResult, Error>?
-    private var cancelled = false
-
-    let acceptsLiveAudio = false
-
-    init(config: AppConfig, client: CustomLLMTranscriptionClient = CustomLLMTranscriptionClient()) {
-        self.config = config
-        self.client = client
-    }
-
-    func append(_: [Float]) {}
-
-    func finish(recordedWAVURL: URL) async throws -> HostedDictationResult {
-        let config = self.config
-        let client = self.client
-        let task = Task {
-            let configuration = try await CustomLLMTranscriptionClient.configuration(from: config)
-            let text = try await client.transcribe(wavURL: recordedWAVURL, configuration: configuration)
-            return HostedDictationResult(text: text, backend: "custom-llm-stt", model: configuration.model,
-                endpoint: configuration.requestURL.absoluteString)
-        }
-        lock.withLock {
-            self.task = task
-            if cancelled { task.cancel() }
-        }
-        defer { lock.withLock { self.task = nil } }
-        return try await task.value
-    }
-
-    func cancel() {
-        lock.withLock {
-            cancelled = true
-            task?.cancel()
-        }
-    }
-}
-
 enum HostedDictationFallbackPolicy {
     static func shouldFallback(
         after error: Error,
@@ -158,7 +130,7 @@ enum HostedDictationActivationPolicy {
                 ? "Choose an OpenRouter transcription model in Settings → Dictation."
                 : nil
         case .customLLM:
-            return CustomLLMTranscriptionClient.configurationIssue(config: config)
+            return CustomLLMRealtimeDictation.configurationIssue(config: config)
         }
     }
 }
