@@ -11157,9 +11157,9 @@ public final class MuesliController: NSObject {
                 model: config.openRouterDictationModel
             ))
         case .customLLM:
-            guard let customSession = CustomLLMRealtimeDictation.session(config: config) else {
+            guard let customSession = CustomLLMRealtimeTranscription.dictationSession(config: config) else {
                 return blockHostedDictationStart(
-                    status: CustomLLMRealtimeDictation.configurationIssue(config: config)
+                    status: CustomLLMRealtimeTranscription.configurationIssue(config: config)
                         ?? "Custom LLM dictation is not configured.",
                     warning: "Custom LLM not configured"
                 )

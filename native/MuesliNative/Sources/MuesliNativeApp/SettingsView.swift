@@ -1058,21 +1058,26 @@ struct SettingsView: View {
     /// OpenAI Realtime transcription endpoint.
     @ViewBuilder
     private var customLLMDictationSettingsRows: some View {
-        customLLMSettingsRows(model: appState.config.customLLMDictationModel) { value in
-            controller.updateConfig { $0.customLLMDictationModel = value }
+        customLLMSettingsRows(model: appState.config.customLLMSpeechModel) { value in
+            controller.updateConfig { $0.customLLMSpeechModel = value }
         }
         Divider().background(MuesliTheme.surfaceBorder)
         settingsRow("Language", controlWidth: meetingControlWidth) {
-            PastableTextField(
-                text: appState.config.customLLMDictationLanguage,
-                placeholder: "Auto-detect, or ISO code such as tr",
-                commitsOnEndEditing: true,
-                onChange: { val in controller.updateConfig { $0.customLLMDictationLanguage = val } }
-            )
-            .frame(height: 22)
+            customLLMSpeechLanguageField
         }
-        settingsDescription("Streams to /v1/realtime on the Custom LLM host. Connection is shared with summaries and cleanup. Empty model uses \(CustomLLMRealtimeDictation.defaultModel).")
+        settingsDescription("Streams to /v1/realtime on the Custom LLM host; meetings use the same setup. Empty model uses \(CustomLLMRealtimeTranscription.defaultModel).")
         Divider().background(MuesliTheme.surfaceBorder)
+    }
+
+    /// Shared by dictation and the meeting live transcript.
+    private var customLLMSpeechLanguageField: some View {
+        PastableTextField(
+            text: appState.config.customLLMSpeechLanguage,
+            placeholder: "Auto-detect, or ISO code such as tr",
+            commitsOnEndEditing: true,
+            onChange: { val in controller.updateConfig { $0.customLLMSpeechLanguage = val } }
+        )
+        .frame(height: 22)
     }
 
     private var openAIDictationModelPresets: [SummaryModelPreset] {
@@ -1214,6 +1219,8 @@ struct SettingsView: View {
                 settingsRow("Language", controlWidth: meetingControlWidth) {
                     if appState.config.resolvedMeetingLiveCaptionBackend == .nemotron35 {
                         nemotron35LanguageMenu
+                    } else if appState.config.resolvedMeetingLiveCaptionBackend == .customLLMRealtime {
+                        customLLMSpeechLanguageField
                     } else {
                         Text("Set in Models → Apple Speech")
                             .font(MuesliTheme.body())

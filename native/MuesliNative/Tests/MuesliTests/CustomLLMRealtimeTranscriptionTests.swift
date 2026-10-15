@@ -1,9 +1,10 @@
 import Foundation
+import MuesliCore
 import Testing
 @testable import MuesliNativeApp
 
-@Suite("Custom LLM realtime dictation")
-struct CustomLLMRealtimeDictationTests {
+@Suite("Custom LLM realtime transcription")
+struct CustomLLMRealtimeTranscriptionTests {
     @Test("realtime socket is derived from any accepted Custom LLM endpoint form", arguments: [
         ("https://litellm.example", "wss://litellm.example/v1/realtime?intent=transcription"),
         ("https://litellm.example/v1", "wss://litellm.example/v1/realtime?intent=transcription"),
@@ -14,36 +15,62 @@ struct CustomLLMRealtimeDictationTests {
     func realtimeURL(endpoint: String, expected: String) {
         var config = AppConfig()
         config.customLLMURL = endpoint
-        #expect(CustomLLMRealtimeDictation.realtimeURL(config: config)?.absoluteString == expected)
+        #expect(CustomLLMRealtimeTranscription.realtimeURL(config: config)?.absoluteString == expected)
     }
 
-    @Test("dictation is blocked until endpoint, OpenAI format, and a credential are set")
+    @Test("transcription is blocked until endpoint, OpenAI format, and a credential are set")
     func configurationGate() {
         var config = AppConfig()
         config.customLLMAPIKeyCommand = "/usr/bin/true"
-        #expect(CustomLLMRealtimeDictation.configurationIssue(config: config) != nil)
-        #expect(CustomLLMRealtimeDictation.session(config: config) == nil)
+        #expect(CustomLLMRealtimeTranscription.configurationIssue(config: config) != nil)
+        #expect(CustomLLMRealtimeTranscription.dictationSession(config: config) == nil)
 
         config.customLLMURL = "https://litellm.example"
-        #expect(CustomLLMRealtimeDictation.configurationIssue(config: config) == nil)
-        #expect(CustomLLMRealtimeDictation.session(config: config) != nil)
+        #expect(CustomLLMRealtimeTranscription.configurationIssue(config: config) == nil)
+        #expect(CustomLLMRealtimeTranscription.dictationSession(config: config) != nil)
 
         config.customLLMFormat = CustomLLMFormat.anthropic.rawValue
-        #expect(CustomLLMRealtimeDictation.configurationIssue(config: config) != nil)
+        #expect(CustomLLMRealtimeTranscription.configurationIssue(config: config) != nil)
 
         config.customLLMFormat = CustomLLMFormat.openAI.rawValue
         config.customLLMAPIKeyCommand = "  "
-        #expect(CustomLLMRealtimeDictation.configurationIssue(config: config) != nil)
+        #expect(CustomLLMRealtimeTranscription.configurationIssue(config: config) != nil)
         config.customLLMAPIKey = "sk-test"
-        #expect(CustomLLMRealtimeDictation.configurationIssue(config: config) == nil)
+        #expect(CustomLLMRealtimeTranscription.configurationIssue(config: config) == nil)
     }
 
-    @Test("an empty dictation model falls back to the proxy's realtime transcription model")
+    @Test("an empty speech model falls back to the proxy's realtime transcription model")
     func defaultModel() {
         var config = AppConfig()
-        #expect(CustomLLMRealtimeDictation.model(config: config) == "gpt-realtime-whisper")
-        config.customLLMDictationModel = " custom-whisper "
-        #expect(CustomLLMRealtimeDictation.model(config: config) == "custom-whisper")
+        #expect(CustomLLMRealtimeTranscription.model(config: config) == "gpt-realtime-whisper")
+        config.customLLMSpeechModel = " custom-whisper "
+        #expect(CustomLLMRealtimeTranscription.model(config: config) == "custom-whisper")
+    }
+
+    @Test("the shared connection resolves endpoint, key, headers, and language for each socket")
+    func connectionResolution() async throws {
+        var config = AppConfig()
+        config.customLLMURL = "https://litellm.example/v1"
+        config.customLLMAPIKey = " sk-test "
+        config.customLLMSpeechLanguage = " tr "
+        config.customLLMHeaders = [CustomLLMRequestHeader(name: "x-team", value: "meetings")]
+
+        let connection = try #require(CustomLLMRealtimeTranscription.connection(config: config))
+        let resolved = try await connection.resolve()
+        #expect(resolved.endpoint.absoluteString == "wss://litellm.example/v1/realtime?intent=transcription")
+        #expect(resolved.apiKey == "sk-test")
+        #expect(resolved.model == "gpt-realtime-whisper")
+        #expect(resolved.language == "tr")
+        #expect(resolved.extraHeaders["x-team"] == "meetings")
+    }
+
+    @Test("the meeting backend owns the final transcript without a per-chunk local pass")
+    func meetingBackendRouting() {
+        let backend = MeetingLiveCaptionBackend.customLLMRealtime
+        #expect(MeetingLiveCaptionBackend.resolved(backend.rawValue) == backend)
+        #expect(backend.producesFinalTranscript)
+        #expect(backend.finalizesChunksNatively)
+        #expect(!MeetingLiveCaptionBackend.nemotron35.finalizesChunksNatively)
     }
 
     @Test("session.update carries the language hint only when one is set")

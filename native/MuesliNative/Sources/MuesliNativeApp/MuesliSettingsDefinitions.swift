@@ -355,7 +355,10 @@ extension MuesliController {
         }
         add("live_transcript", "Meeting live transcript model", [Choice(id: "off", label: "Off")] + MeetingLiveCaptionBackend.allCases.map { .init(id: $0.rawValue, label: $0.settingsLabel) },
             read: { $0.enableLiveStreamingPartials ? $0.resolvedMeetingLiveCaptionBackend.rawValue : "off" }, unavailable: { value in
-                value == "off" || MeetingLiveCaptionBackend(rawValue: value)?.isDownloaded == true ? nil : "Download this live transcript model from Models first."
+                if value == MeetingLiveCaptionBackend.customLLMRealtime.rawValue {
+                    return CustomLLMRealtimeTranscription.configurationIssue(config: self.config)
+                }
+                return value == "off" || MeetingLiveCaptionBackend(rawValue: value)?.isDownloaded == true ? nil : "Download this live transcript model from Models first."
             }) { value in
             self.updateConfig {
                 $0.enableLiveStreamingPartials = value != "off"

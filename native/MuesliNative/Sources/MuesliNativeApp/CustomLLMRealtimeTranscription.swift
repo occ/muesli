@@ -1,12 +1,13 @@
 import Foundation
 import MuesliCore
 
-/// Dictation through the Custom LLM connection: OpenAI Realtime transcription
-/// on the same OpenAI-compatible host (for example a LiteLLM proxy that serves
-/// `/v1/realtime?intent=transcription`). Endpoint, API key, key command, and
-/// headers are shared with Custom LLM summaries and cleanup; only the model and
-/// language are dictation-specific.
-enum CustomLLMRealtimeDictation {
+/// Speech recognition through the Custom LLM connection: OpenAI Realtime
+/// transcription on the same OpenAI-compatible host (for example a LiteLLM
+/// proxy that serves `/v1/realtime?intent=transcription`). Dictation and the
+/// meeting live transcript both use it. Endpoint, API key, key command, and
+/// headers are shared with Custom LLM summaries and cleanup; only the speech
+/// model and language are specific to transcription.
+enum CustomLLMRealtimeTranscription {
     static let defaultModel = "gpt-realtime-whisper"
     static let backend = "custom-llm-realtime"
 
@@ -54,24 +55,28 @@ enum CustomLLMRealtimeDictation {
     }
 
     static func model(config: AppConfig) -> String {
-        let trimmed = config.customLLMDictationModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = config.customLLMSpeechModel.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? defaultModel : trimmed
     }
 
-    /// A live session, or nil when `configurationIssue` would block dictation.
-    /// Only Sendable values are captured; the API key command runs when the
-    /// socket opens, off the hotkey path.
-    static func session(config: AppConfig) -> OpenAIHostedDictationSession? {
+    /// Socket endpoint and a resolver for the full configuration, or nil when
+    /// `configurationIssue` would block transcription. Only Sendable values are
+    /// captured; the API key command runs when a socket opens.
+    static func connection(config: AppConfig) -> (
+        model: String,
+        endpoint: URL,
+        resolve: OpenAIRealtimeTranscriptionSession.ResolveConfiguration
+    )? {
         guard configurationIssue(config: config) == nil,
               let endpoint = realtimeURL(config: config),
               let headers = try? CustomLLMRequestHeaders.validated(config.customLLMHeaders) else {
             return nil
         }
         let model = model(config: config)
-        let language = config.customLLMDictationLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let language = config.customLLMSpeechLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         let keyCommand = config.customLLMAPIKeyCommand
         let savedKey = config.customLLMAPIKey
-        return OpenAIHostedDictationSession(model: model, backend: backend, endpoint: endpoint) {
+        return (model, endpoint, {
             OpenAIDictationConfiguration(
                 apiKey: try await CredentialCommandRunner.resolve(command: keyCommand, fallback: savedKey),
                 model: model,
@@ -79,6 +84,17 @@ enum CustomLLMRealtimeDictation {
                 extraHeaders: headers,
                 language: language
             )
-        }
+        })
+    }
+
+    /// A live dictation session, or nil when `configurationIssue` would block dictation.
+    static func dictationSession(config: AppConfig) -> OpenAIHostedDictationSession? {
+        guard let connection = connection(config: config) else { return nil }
+        return OpenAIHostedDictationSession(
+            model: connection.model,
+            backend: backend,
+            endpoint: connection.endpoint,
+            resolveConfiguration: connection.resolve
+        )
     }
 }

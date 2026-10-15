@@ -84,6 +84,7 @@ enum OpenAIRealtimeProtocol {
     }
 
     static let commit = #"{"type":"input_audio_buffer.commit"}"#
+    static let clear = #"{"type":"input_audio_buffer.clear"}"#
 
     private static func encode(_ object: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: object)
@@ -129,7 +130,7 @@ struct OpenAIRealtimePCMEncoder: Sendable {
     }
 }
 
-private struct OpenAIRealtimeServerEvent {
+struct OpenAIRealtimeServerEvent {
     let type: String
     let itemID: String?
     let transcript: String?

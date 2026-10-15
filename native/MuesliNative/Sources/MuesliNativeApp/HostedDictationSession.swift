@@ -130,7 +130,7 @@ enum HostedDictationActivationPolicy {
                 ? "Choose an OpenRouter transcription model in Settings → Dictation."
                 : nil
         case .customLLM:
-            return CustomLLMRealtimeDictation.configurationIssue(config: config)
+            return CustomLLMRealtimeTranscription.configurationIssue(config: config)
         }
     }
 }

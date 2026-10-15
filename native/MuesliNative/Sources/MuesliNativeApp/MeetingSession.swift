@@ -431,7 +431,8 @@ final class MeetingSession {
                 let engines = try await MeetingLiveCaptionModelStore.makeEngines(
                     backend: backend,
                     nemotronPromptId: self.config.resolvedNemotron35Language.promptId,
-                    appleSpeechLanguage: self.config.resolvedAppleSpeechLanguage
+                    appleSpeechLanguage: self.config.resolvedAppleSpeechLanguage,
+                    config: self.config
                 )
                 guard self.chunkRotationQueue.sync(execute: { self.isRecording }),
                       self.partialSessionsStorage.withLock({ !$0.isShutDown }) else {
@@ -502,8 +503,8 @@ final class MeetingSession {
         start: TimeInterval,
         end: TimeInterval
     ) async -> [SpeechSegment] {
-        // Apple chunks already chose their authoritative result before any batch work.
-        guard config.resolvedMeetingLiveCaptionBackend != .appleSpeech else { return segments }
+        // Natively finalized chunks already chose their authoritative result before any batch work.
+        guard !config.resolvedMeetingLiveCaptionBackend.finalizesChunksNatively else { return segments }
         let prefersStreamingTranscript = config.enableLiveStreamingPartials
             && config.resolvedMeetingLiveCaptionBackend.producesFinalTranscript
         guard (segments.isEmpty || prefersStreamingTranscript),
@@ -511,9 +512,9 @@ final class MeetingSession {
         return [SpeechSegment(start: start, end: max(end, start + 0.1), text: text)]
     }
 
-    private func appleStreamingText(session: MeetingStreamingPartialSession?, id: UUID) async -> String? {
+    private func nativeStreamingText(session: MeetingStreamingPartialSession?, id: UUID) async -> String? {
         guard config.enableLiveStreamingPartials,
-              config.resolvedMeetingLiveCaptionBackend == .appleSpeech else { return nil }
+              config.resolvedMeetingLiveCaptionBackend.finalizesChunksNatively else { return nil }
         return await session?.finalizedSegmentText(id: id)
     }
 
@@ -802,7 +803,7 @@ final class MeetingSession {
            Self.shouldAttemptSystemRecovery(
                usesStreamingFinalTranscript: usesStreamingFinalTranscript,
                hasSystemSegments: !systemSegments.isEmpty,
-               hasCompleteStreamingCoverage: config.resolvedMeetingLiveCaptionBackend == .appleSpeech
+               hasCompleteStreamingCoverage: config.resolvedMeetingLiveCaptionBackend.finalizesChunksNatively
                    && systemStreamingCoverageIsComplete.withLock { $0 }
            ) {
             let systemRecovery = await repairSystemSegmentsIfNeeded(
@@ -995,7 +996,7 @@ final class MeetingSession {
             }
             guard let self else { return [] }
             return await Self.resolveChunkTranscript(timing: chunkTiming, finalizedText: {
-                await self.appleStreamingText(session: partialSession, id: segmentID)
+                await self.nativeStreamingText(session: partialSession, id: segmentID)
             }, recordedAudio: {
                 await self.transcribeMicChunk(rawURL: rawChunkURL, chunkTiming: chunkTiming, isFinalChunk: false)
             })
@@ -1050,7 +1051,7 @@ final class MeetingSession {
             }
             guard let self else { return [] }
             return await Self.resolveChunkTranscript(timing: chunkTiming, finalizedText: {
-                await self.appleStreamingText(session: partialSession, id: segmentID)
+                await self.nativeStreamingText(session: partialSession, id: segmentID)
             }, recordedAudio: {
                 self.systemStreamingCoverageIsComplete.withLock { $0 = false }
                 do {

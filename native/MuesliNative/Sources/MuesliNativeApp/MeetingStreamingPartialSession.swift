@@ -62,7 +62,8 @@ enum MeetingLiveCaptionModelStore {
     static func makeEngines(
         backend: MeetingLiveCaptionBackend,
         nemotronPromptId: Int32,
-        appleSpeechLanguage: String
+        appleSpeechLanguage: String,
+        config: AppConfig
     ) async throws -> (mic: MeetingStreamingPartialEngine, system: MeetingStreamingPartialEngine) {
         switch backend {
         case .parakeetRealtimeEOU:
@@ -117,6 +118,26 @@ enum MeetingLiveCaptionModelStore {
                 await mic.shutdown()
                 await system.shutdown()
                 await transcriber.shutdown()
+                throw error
+            }
+        case .customLLMRealtime:
+            guard let connection = CustomLLMRealtimeTranscription.connection(config: config) else {
+                throw NSError(
+                    domain: "MeetingLiveCaptions",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: CustomLLMRealtimeTranscription.configurationIssue(config: config)
+                        ?? "Custom LLM realtime transcription is not configured."]
+                )
+            }
+            let mic = OpenAIRealtimeMeetingPartialEngine(label: "You", resolveConfiguration: connection.resolve)
+            let system = OpenAIRealtimeMeetingPartialEngine(label: "Others", resolveConfiguration: connection.resolve)
+            do {
+                try await mic.prepare()
+                try await system.prepare()
+                return (mic, system)
+            } catch {
+                await mic.shutdown()
+                await system.shutdown()
                 throw error
             }
         }

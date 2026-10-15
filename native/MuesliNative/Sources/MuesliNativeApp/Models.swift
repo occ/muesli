@@ -710,6 +710,7 @@ enum MeetingLiveCaptionBackend: String, CaseIterable, Codable, Sendable {
     case parakeetRealtimeEOU = "parakeet_realtime_eou"
     case appleSpeech = "apple-speech"
     case nemotron35 = "nemotron35"
+    case customLLMRealtime = "custom_llm_realtime"
 
     static let defaultBackend: Self = .parakeetRealtimeEOU
 
@@ -718,6 +719,7 @@ enum MeetingLiveCaptionBackend: String, CaseIterable, Codable, Sendable {
         case .parakeetRealtimeEOU: return MeetingLiveCaptionModelStore.label
         case .appleSpeech: return BackendOption.appleSpeechAnalyzer.label
         case .nemotron35: return BackendOption.nemotron35Multilingual.label
+        case .customLLMRealtime: return "Custom LLM Realtime"
         }
     }
 
@@ -726,10 +728,15 @@ enum MeetingLiveCaptionBackend: String, CaseIterable, Codable, Sendable {
         case .parakeetRealtimeEOU: return "\(label) (live preview only)"
         case .appleSpeech: return "\(label) (live + final)"
         case .nemotron35: return "\(label) (live + final)"
+        case .customLLMRealtime: return "\(label) (live + final)"
         }
     }
 
-    var producesFinalTranscript: Bool { self == .nemotron35 || self == .appleSpeech }
+    var producesFinalTranscript: Bool { self != .parakeetRealtimeEOU }
+
+    /// Engines that finalize each meeting chunk themselves; the recorded-audio
+    /// model runs only when that result is missing.
+    var finalizesChunksNatively: Bool { self == .appleSpeech || self == .customLLMRealtime }
 
     var isDownloaded: Bool {
         switch self {
@@ -742,6 +749,8 @@ enum MeetingLiveCaptionBackend: String, CaseIterable, Codable, Sendable {
         case .nemotron35:
             guard #available(macOS 15, *) else { return false }
             return BackendOption.nemotron35Multilingual.isDownloaded
+        // Nothing to download; the connection is checked when engines are made.
+        case .customLLMRealtime: return true
         }
     }
 
@@ -1783,9 +1792,10 @@ struct AppConfig: Codable {
     var dictationProvider: String = DictationProvider.defaultProvider.rawValue
     var openaiDictationModel: String = OpenAITranscriptionClient.defaultModel
     var openRouterDictationModel: String = ""
-    var customLLMDictationModel: String = ""
-    /// ISO-639-1 language hint for Custom LLM realtime dictation; empty means auto.
-    var customLLMDictationLanguage: String = ""
+    /// Custom LLM realtime speech model for dictation and meetings; empty uses the default.
+    var customLLMSpeechModel: String = ""
+    /// ISO-639-1 language hint for Custom LLM realtime speech; empty means auto.
+    var customLLMSpeechLanguage: String = ""
     var dictationInputDeviceUID: String? = nil
     var meetingInputDeviceUID: String? = nil
     var cohereLanguage: String = CohereTranscribeLanguage.defaultLanguage.rawValue
@@ -1953,8 +1963,8 @@ struct AppConfig: Codable {
         case dictationProvider = "dictation_provider"
         case openaiDictationModel = "openai_dictation_model"
         case openRouterDictationModel = "openrouter_dictation_model"
-        case customLLMDictationModel = "custom_llm_dictation_model"
-        case customLLMDictationLanguage = "custom_llm_dictation_language"
+        case customLLMSpeechModel = "custom_llm_speech_model"
+        case customLLMSpeechLanguage = "custom_llm_speech_language"
         case dictationInputDeviceUID = "dictation_input_device_uid"
         case meetingInputDeviceUID = "meeting_input_device_uid"
         case cohereLanguage = "cohere_language"
@@ -2122,10 +2132,10 @@ struct AppConfig: Codable {
         openaiDictationModel = (try? c.decode(String.self, forKey: .openaiDictationModel)) ?? defaults.openaiDictationModel
         openRouterDictationModel = (try? c.decode(String.self, forKey: .openRouterDictationModel))
             ?? defaults.openRouterDictationModel
-        customLLMDictationModel = (try? c.decode(String.self, forKey: .customLLMDictationModel))
-            ?? defaults.customLLMDictationModel
-        customLLMDictationLanguage = (try? c.decode(String.self, forKey: .customLLMDictationLanguage))
-            ?? defaults.customLLMDictationLanguage
+        customLLMSpeechModel = (try? c.decode(String.self, forKey: .customLLMSpeechModel))
+            ?? defaults.customLLMSpeechModel
+        customLLMSpeechLanguage = (try? c.decode(String.self, forKey: .customLLMSpeechLanguage))
+            ?? defaults.customLLMSpeechLanguage
         dictationInputDeviceUID = try? c.decode(String.self, forKey: .dictationInputDeviceUID)
         meetingInputDeviceUID = try? c.decode(String.self, forKey: .meetingInputDeviceUID)
         cohereLanguage = CohereTranscribeLanguage.resolvedCode(try? c.decode(String.self, forKey: .cohereLanguage))
