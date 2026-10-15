@@ -298,25 +298,29 @@ struct OpenRouterTranscriptionClientTests {
             provider: .local,
             openAIAPIKey: "",
             openRouterAPIKey: "",
-            openRouterModel: ""
+            openRouterModel: "",
+            config: AppConfig()
         ) == nil)
         #expect(HostedDictationActivationPolicy.blockingMessage(
             provider: .openRouter,
             openAIAPIKey: "",
             openRouterAPIKey: "",
-            openRouterModel: "provider/model"
+            openRouterModel: "provider/model",
+            config: AppConfig()
         )?.contains("not connected") == true)
         #expect(HostedDictationActivationPolicy.blockingMessage(
             provider: .openRouter,
             openAIAPIKey: "",
             openRouterAPIKey: "key",
-            openRouterModel: ""
+            openRouterModel: "",
+            config: AppConfig()
         )?.contains("Choose") == true)
         #expect(HostedDictationActivationPolicy.blockingMessage(
             provider: .openRouter,
             openAIAPIKey: "",
             openRouterAPIKey: "key",
-            openRouterModel: "provider/model"
+            openRouterModel: "provider/model",
+            config: AppConfig()
         ) == nil)
     }
 

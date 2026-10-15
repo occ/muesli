@@ -18,7 +18,8 @@ struct CustomLLMTranscriptionClientTests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-test")
         #expect(request.value(forHTTPHeaderField: "x-team") == "dictation")
 
-        let body = try #require(JSONSerialization.jsonObject(with: try #require(request.httpBody)) as? [String: Any])
+        let httpBody = try #require(request.httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: httpBody) as? [String: Any])
         #expect(body["model"] as? String == "gemini-4-argon")
         #expect(body["max_tokens"] as? Int == CustomLLMTranscriptionClient.maxOutputTokens)
         let messages = try #require(body["messages"] as? [[String: Any]])
